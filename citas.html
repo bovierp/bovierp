@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reserva de Citas Peluquería</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f9f9f9;
+        }
+        #container {
+            display: grid;
+            gap: 20px;
+        }
+        .section {
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background-color: #fff;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        form {
+            display: flex;
+            flex-direction: column;
+        }
+        input, button, select {
+            margin: 5px 0;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .messages {
+            margin-top: 15px;
+        }
+        .success {
+            color: green;
+        }
+        .error {
+            color: red;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f4f4f4;
+        }
+        #importExport {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* Estilos responsivos */
+        @media (min-width: 600px) {
+            #container {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (min-width: 900px) {
+            #container {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        @media (max-width: 599px) {
+            #container {
+                grid-template-columns: 1fr;
+            }
+            .section {
+                padding: 15px;
+            }
+            input, button, select {
+                padding: 10px;
+            }
+            table {
+                font-size: 14px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <!-- Formulario de reserva -->
+        <div class="section">
+            <h2>Reserva de Cita</h2>
+            <form id="reservationForm">
+                <input type="text" id="name" placeholder="Nombre" required>
+                <select id="service" required>
+                    <option value="">-- Selecciona un servicio --</option>
+                    <option value="corte">Corte (30 min)</option>
+                    <option value="peluqueria">Peluquería completa (60 min)</option>
+                    <option value="coloracion">Coloración (90 min)</option>
+                </select>
+                <input type="date" id="date" required>
+                <input type="time" id="time" min="10:00" max="18:00" required>
+                <button type="submit">Confirmar Reserva</button>
+                <div class="messages" id="reservationMessages"></div>
+            </form>
+        </div>
+
+        <!-- Gestion de reservas -->
+        <div class="section">
+            <h2>Reservas Existentes</h2>
+            <button onclick="deleteAllReservations()" style="margin-bottom: 10px;">Cancelar todas las reservas</button>
+            <table id="reservationsTable">
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Servicio</th>
+                        <th>Fecha y Hora</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Respaldar datos -->
+        <div class="section">
+            <h2>Respaldar/Restaurar Datos</h2>
+            <div id="importExport">
+                <button onclick="exportReservations()">Exportar Reservas</button>
+                <input type="file" id="importFile" accept=".json" onchange="importReservations()">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const services = {
+            corte: { name: 'Corte', duration: 30 }, // minutos
+            peluqueria: { name: 'Peluquería completa', duration: 60 },
+            coloracion: { name: 'Coloración', duration: 90 }
+        };
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const dateInput = document.getElementById('date');
+            const minDate = new Date();
+            dateInput.min = minDate.toISOString().split('T')[0];
+            
+            loadReservations();
+        });
+
+        // Cargar reservas desde localStorage
+        function loadReservations() {
+            const stored = localStorage.getItem('reservations');
+            const reservations = stored ? JSON.parse(stored) : [];
+            console.log("Reservas cargadas:", reservations); // Depuración
+            updateReservationsTable(reservations);
+        }
+
+        // Formatear fecha y hora para mostrar (incluyendo la hora de fin)
+        function formatDateRange(isoDate, durationMinutes) {
+            const start = new Date(isoDate);
+            const end = new Date(start.getTime() + durationMinutes * 60000);
+
+            const formatTime = (date) => {
+                return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+            };
+
+            return `${start.getDate().toString().padStart(2, '0')}/${
+                    (start.getMonth()+1).toString().padStart(2, '0')}/${
+                    start.getFullYear()} ${formatTime(start)} - ${formatTime(end)}`;
+        }
+
+        // Actualizar tabla de reservas
+        function updateReservationsTable(reservations) {
+            const tbody = document.querySelector('#reservationsTable tbody');
+            tbody.innerHTML = ''; // Limpiar la tabla antes de actualizar
+
+            reservations.forEach(reservation => {
+                // Verificar si el servicio existe en el objeto `services`
+                if (!services[reservation.service]) {
+                    console.error(`Servicio no válido en la reserva: ${reservation.service}`);
+                    return; // Saltar esta reserva si el servicio no es válido
+                }
+
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${reservation.name}</td>
+                    <td>${services[reservation.service].name}</td>
+                    <td>${formatDateRange(reservation.startDateTime, services[reservation.service].duration)}</td>
+                    <td><button onclick="deleteReservation('${reservation.startDateTime}')">Cancelar</button></td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Validación mejorada con servicios
+        function validateReservation(name, service, startDateTime) {
+            const errors = [];
+            
+            // Validar nombre
+            if (!name.trim()) {
+                errors.push('El nombre es obligatorio');
+            }
+
+            // Validar servicio seleccionado
+            if (!service || service === 'Selecciona un servicio') {
+                errors.push('Debe seleccionar un servicio');
+            }
+
+            // Parsear fecha y hora
+            const start = new Date(startDateTime);
+            if (isNaN(start.getTime())) {
+                errors.push('Fecha/hora inválida');
+                return errors;
+            }
+
+            // Validar fecha futura
+            if (start < new Date()) {
+                errors.push('No se permiten fechas pasadas');
+            }
+
+            // Validar días laborables (Martes a Viernes)
+            const day = start.getDay();
+            if (![2, 3, 4, 5].includes(day)) { // Martes(2) a Viernes(5)
+                errors.push('Solo se aceptan reservas de martes a viernes');
+            }
+
+            // Validar horario (10:00-18:00)
+            const hours = start.getHours();
+            const minutes = start.getMinutes();
+            const totalMinutes = hours * 60 + minutes;
+            if (totalMinutes < 600 || totalMinutes > 1080) {
+                errors.push('La hora debe estar entre 10:00 y 18:00');
+            }
+
+            // Calcular tiempo final con duración del servicio
+            const durationMinutes = services[service].duration;
+            const endTime = new Date(start.getTime() + durationMinutes * 60000);
+            
+            // Validar no exceder las 19:00
+            if (endTime.getHours() > 19 || 
+                (endTime.getHours() === 19 && endTime.getMinutes() > 0)) {
+                errors.push('La cita excede el horario de cierre (19:00)');
+            }
+
+            // Validar solapamiento
+            const existing = JSON.parse(localStorage.getItem('reservations') || '[]');
+            const overlapping = existing.some(r => {
+                const existingStart = new Date(r.startDateTime);
+                const existingEnd = new Date(existingStart.getTime() + services[r.service].duration * 60000);
+                
+                // Verificar si hay solapamiento
+                return (start < existingEnd) && (endTime > existingStart);
+            });
+
+            if (overlapping) {
+                errors.push('¡Solapamiento con otra reserva!');
+            }
+
+            return errors;
+        }
+
+        // Guardar reserva con servicio
+        function saveReservation(reservation) {
+            // Verificar si el servicio es válido
+            if (!services[reservation.service]) {
+                console.error("Servicio no válido:", reservation.service);
+                return; // No guardar la reserva si el servicio no es válido
+            }
+
+            const existing = JSON.parse(localStorage.getItem('reservations') || '[]');
+            existing.push(reservation);
+            localStorage.setItem('reservations', JSON.stringify(existing));
+            console.log("Reserva guardada:", reservation); // Depuración
+            loadReservations(); // Actualizar la tabla después de guardar
+        }
+
+        // Eliminar reserva
+        function deleteReservation(startDateTime) {
+            const existing = JSON.parse(localStorage.getItem('reservations') || '[]');
+            const filtered = existing.filter(r => r.startDateTime !== startDateTime);
+            localStorage.setItem('reservations', JSON.stringify(filtered));
+            console.log("Reserva eliminada:", startDateTime); // Depuración
+            loadReservations(); // Actualizar la tabla después de eliminar
+        }
+
+        // Eliminar todas las reservas
+        function deleteAllReservations() {
+            if (confirm("¿Estás seguro de que quieres cancelar todas las reservas?")) {
+                localStorage.removeItem('reservations');
+                loadReservations(); // Actualizar la tabla después de eliminar
+                console.log("Todas las reservas han sido canceladas."); // Depuración
+            }
+        }
+
+        // Manejador de formulario
+        document.getElementById('reservationForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const name = document.getElementById('name').value;
+            const service = document.getElementById('service').value;
+            const date = document.getElementById('date').value;
+            const time = document.getElementById('time').value;
+            const startDateTime = `${date}T${time}`;
+            const messages = document.getElementById('reservationMessages');
+
+            // Limpiar mensajes anteriores
+            messages.innerHTML = '';
+
+            const validationErrors = validateReservation(name, service, startDateTime);
+            if (validationErrors.length === 0) {
+                saveReservation({
+                    name,
+                    service,
+                    startDateTime,
+                    duration: services[service].duration
+                });
+                messages.innerHTML = '<p class="success">¡Reserva confirmada!</p>';
+                this.reset();
+                document.getElementById('service').selectedIndex = 0; // Reiniciar desplegable
+            } else {
+                validationErrors.forEach(error => {
+                    const p = document.createElement('p');
+                    p.className = 'error';
+                    p.textContent = error;
+                    messages.appendChild(p);
+                });
+            }
+        });
+
+        // Exportar reservas
+        function exportReservations() {
+            const reservations = JSON.parse(localStorage.getItem('reservations') || '[]');
+            if (reservations.length === 0) {
+                alert("No hay reservas para exportar.");
+                return;
+            }
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(reservations));
+            const downloadLink = document.createElement("a");
+            downloadLink.setAttribute("href", dataStr);
+            downloadLink.setAttribute("download", "reservas.json");
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+        }
+
+        // Importar reservas
+        function importReservations() {
+            const fileInput = document.getElementById('importFile');
+            if (!fileInput.files || !fileInput.files[0]) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const imported = JSON.parse(e.target.result);
+                    const existing = JSON.parse(localStorage.getItem('reservations') || '[]');
+                    
+                    // Validar reservas importadas
+                    const validReservations = [];
+                    const errors = [];
+                    imported.forEach(res => {
+                        const resErrors = validateReservation(
+                            res.name, 
+                            res.service, 
+                            res.startDateTime
+                        );
+                        if (resErrors.length === 0) {
+                            // Verificar duplicados
+                            const isDuplicate = existing.some(r => r.startDateTime === res.startDateTime);
+                            if (!isDuplicate) {
+                                validReservations.push(res);
+                            } else {
+                                errors.push(`Reserva duplicada en ${res.startDateTime}`);
+                            }
+                        } else {
+                            errors.push(`Error en ${res.startDateTime}: ${resErrors.join(', ')}`);
+                        }
+                    });
+
+                    if (errors.length > 0) {
+                        alert("Errores en importación:\n" + errors.join('\n'));
+                    } else {
+                        const merged = [...existing, ...validReservations];
+                        localStorage.setItem('reservations', JSON.stringify(merged));
+                        loadReservations();
+                        alert("Reservas importadas con éxito");
+                    }
+                } catch (err) {
+                    alert("Archivo JSON inválido");
+                }
+            };
+            reader.readAsText(fileInput.files[0]);
+            fileInput.value = ''; // Reiniciar input de archivo
+        }
+    </script>
+</body>
+</html>
